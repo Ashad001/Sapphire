@@ -34,3 +34,7 @@ collect_sapphire_files.py
 
 .tmp/
 Sapphire/Services/FaceID/Models/PassiveLiveness.enc
+
+# Local secrets (OpenRouter key for Ask Screen) — never commit
+.env
+.env.local

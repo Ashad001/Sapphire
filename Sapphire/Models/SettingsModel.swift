@@ -724,6 +724,8 @@ struct Settings: Codable, Equatable {
     var circleToSearchEnabled: Bool = true
     var circleToSearchShortcut: KeyboardShortcut = KeyboardShortcut(key: "C", modifiers: [.control, .shift])
     var circleToSearchBrowserEngine: CircleSearchBrowserEngine = .google
+    var askScreenEnabled: Bool = true
+    var askScreenShortcut: KeyboardShortcut = KeyboardShortcut(key: "A", modifiers: [.command, .option])
 
     // MARK: - Legacy migration shims (read-only computed, not persisted)
     var geminiEnabled: Bool { intelligenceEnabled }
@@ -1681,18 +1683,18 @@ enum GeneralSettingType: String, CaseIterable, Identifiable, Equatable {
 }
 
 enum NotchButtonType: String, Codable, Identifiable, Equatable {
-    case settings, fileShelf, notes, clipboard, intelligence, intelligenceLive, caffeine, spacer, multiAudio, battery, pin
+    case settings, fileShelf, notes, clipboard, intelligence, intelligenceLive, askScreen, caffeine, spacer, multiAudio, battery, pin
     var id: String { self.rawValue }
 
     static let allCases: [NotchButtonType] = [
-        .settings, .fileShelf, .notes, .clipboard, .intelligence,
+        .settings, .fileShelf, .notes, .clipboard, .intelligence, .askScreen,
         .caffeine, .spacer, .multiAudio, .battery, .pin,
     ]
 
     var displayName: String {
         switch self {
         case .settings: "Settings"; case .fileShelf: "File Shelf"; case .notes: "Notes"; case .clipboard: "Clipboard"
-        case .intelligence: "Blip"; case .intelligenceLive: "Gemini";
+        case .intelligence: "Blip"; case .intelligenceLive: "Gemini"; case .askScreen: "Ask Screen";
         case .caffeine: "Caffeinate"; case .spacer: "Spacer";
         case .multiAudio: "Multi-Audio (Beta)"; case .battery: "Battery"; case .pin: "Pin"
         }
@@ -1702,6 +1704,8 @@ enum NotchButtonType: String, Codable, Identifiable, Equatable {
         switch self {
         case .settings: "gearshape"; case .fileShelf: "tray.full"; case .notes: "note.text"; case .clipboard: "list.clipboard"
         case .intelligence: "sparkle"; case .intelligenceLive: "waveform";
+        // The notch renders Ask Screen with the claude_logo asset; this is the settings-list fallback.
+        case .askScreen: "sparkles";
         case .caffeine: "cup.and.saucer"; case .spacer: "space";
         case .multiAudio: "hifispeaker.and.homepod.mini.fill"; case .battery: "battery.100"; case .pin: "pin"
         }

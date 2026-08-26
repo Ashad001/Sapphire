@@ -20,6 +20,9 @@ enum SapphireAnalytics {
         defer { lock.unlock() }
 
         if !isConfigured {
+            // Fork-only guard: GoogleService-Info.plist is gitignored upstream and absent from this
+            // repo, and FirebaseApp.configure() traps without it. Unchanged when the plist is present.
+            guard Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil else { return }
             FirebaseApp.configure()
             isConfigured = true
         }
@@ -37,6 +40,7 @@ enum SapphireAnalytics {
         if !isConfigured {
             bootstrap()
         }
+        guard isConfigured else { return }
         Analytics.logEvent(name, parameters: parameters)
     }
 }

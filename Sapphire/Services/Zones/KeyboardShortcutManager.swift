@@ -8,6 +8,7 @@
 import AppKit
 import Combine
 import Carbon.HIToolbox
+import ApplicationServices
 
 private func executionTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
     guard let refcon = refcon else { return Unmanaged.passRetained(event) }
@@ -32,10 +33,13 @@ class KeyboardShortcutManager {
     private var cancellables = Set<AnyCancellable>()
 
     private var registeredShortcuts: [KeyboardShortcut: Plane] = [:]
+    // ponytail: a global action is just a notification to post — no enum, no closure registry.
+    private var registeredActions: [KeyboardShortcut: Notification.Name] = [:]
     private let cacheLock = NSLock()
     private var lastTriggerAt = Date.distantPast
 
     private var isAccessibilitySuspended = false
+    private var hasRequestedAccessibilityThisLaunch = false
 
     private init() {
         registerTrustAwareness()
@@ -68,6 +72,8 @@ class KeyboardShortcutManager {
             }
         }
 
+        let globalActions = Self.globalActionShortcuts(from: SettingsModel.shared.settings)
+
         cacheLock.withLock {
             registeredShortcuts.removeAll()
             for plane in planesWithShortcuts {
@@ -75,11 +81,17 @@ class KeyboardShortcutManager {
                     registeredShortcuts[shortcut] = plane
                 }
             }
+            registeredActions = globalActions
         }
 
-        if planesWithShortcuts.isEmpty {
+        if planesWithShortcuts.isEmpty && globalActions.isEmpty {
             return
         }
+
+        // Without Accessibility, CGEvent.tapCreate and the global NSEvent monitor both fail
+        // silently — shortcuts then only fire while Sapphire is frontmost, via the local
+        // monitor, which looks like "the hotkey works but only sometimes". Ask once per launch.
+        requestAccessibilityIfNeeded()
 
         let eventsToMonitor: CGEventMask = (1 << CGEventType.keyDown.rawValue)
         let selfAsUnsafeMutableRawPointer = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
@@ -102,6 +114,27 @@ class KeyboardShortcutManager {
         }
 
         installFallbackMonitors()
+    }
+
+    /// Prompts for Accessibility at most once per launch, and only when shortcuts are actually
+    /// registered. Note a granted-looking row in System Settings is not proof of trust: TCC binds
+    /// each grant to a code-signing requirement, so a rebuild signed with a different identity
+    /// (or team) is untrusted even though the toggle still reads as on.
+    private func requestAccessibilityIfNeeded() {
+        guard !hasRequestedAccessibilityThisLaunch, !AXIsProcessTrusted() else { return }
+        hasRequestedAccessibilityThisLaunch = true
+
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
+        _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
+        print("[KeyboardShortcutManager] Not Accessibility-trusted; global shortcuts are inactive until granted.")
+    }
+
+    private static func globalActionShortcuts(from settings: Settings) -> [KeyboardShortcut: Notification.Name] {
+        var actions: [KeyboardShortcut: Notification.Name] = [:]
+        if settings.askScreenEnabled {
+            actions[settings.askScreenShortcut] = .sapphireOpenAskScreen
+        }
+        return actions
     }
 
     private func installFallbackMonitors() {
@@ -151,6 +184,7 @@ class KeyboardShortcutManager {
         localMonitor = nil
         cacheLock.withLock {
             registeredShortcuts.removeAll()
+            registeredActions.removeAll()
         }
     }
 
@@ -176,7 +210,9 @@ class KeyboardShortcutManager {
             planeToActivate = registeredShortcuts[currentShortcut]
         }
 
-        guard let plane = planeToActivate else { return Unmanaged.passRetained(event) }
+        guard let plane = planeToActivate else {
+            return handleGlobalAction(for: currentShortcut) ? nil : Unmanaged.passRetained(event)
+        }
 
         let now = Date()
         guard now.timeIntervalSince(lastTriggerAt) > 0.3 else { return nil }
@@ -186,6 +222,23 @@ class KeyboardShortcutManager {
             WindowArrangementManager.shared.activate(plane: plane)
         }
         return nil
+    }
+
+    private func handleGlobalAction(for shortcut: KeyboardShortcut) -> Bool {
+        var action: Notification.Name?
+        cacheLock.withLock {
+            action = registeredActions[shortcut]
+        }
+        guard let action else { return false }
+
+        let now = Date()
+        guard now.timeIntervalSince(lastTriggerAt) > 0.3 else { return true }
+        lastTriggerAt = now
+
+        Task { @MainActor in
+            NotificationCenter.default.post(name: action, object: nil)
+        }
+        return true
     }
 
     @discardableResult
@@ -205,7 +258,9 @@ class KeyboardShortcutManager {
             planeToActivate = registeredShortcuts[currentShortcut]
         }
 
-        guard let plane = planeToActivate else { return false }
+        guard let plane = planeToActivate else {
+            return handleGlobalAction(for: currentShortcut) ? swallow : false
+        }
 
         let now = Date()
         guard now.timeIntervalSince(lastTriggerAt) > 0.3 else { return swallow }

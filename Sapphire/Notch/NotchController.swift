@@ -556,6 +556,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             .onReceive(NotificationCenter.default.publisher(for: .sapphireOpenMusicDevices), perform: handleOpenMusicDevicesNotification)
             .onReceive(NotificationCenter.default.publisher(for: .sapphireRevealHiddenNotch), perform: handleRevealHiddenNotchNotification)
             .onReceive(NotificationCenter.default.publisher(for: .sapphireOpenCircleToSearch), perform: handleOpenCircleToSearchNotification)
+            .onReceive(NotificationCenter.default.publisher(for: .sapphireOpenAskScreen), perform: handleOpenAskScreenNotification)
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
                 handleScreenParametersChange()
             }
@@ -615,6 +616,10 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
     private func handleOpenCircleToSearchNotification(_ notification: Notification) {
         openCircleToSearch(object: notification.object as? String)
+    }
+
+    private func handleOpenAskScreenNotification(_ notification: Notification) {
+        openAskScreen()
     }
 
     private func handleInteractiveChange(_ isInteractive: Bool) {
@@ -1293,6 +1298,10 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             }
         case .intelligenceLive:
             EmptyView()
+        case .askScreen:
+            if settings.settings.askScreenEnabled {
+                AssetIconButton(assetName: "claude_logo", action: { openAskScreen() })
+            }
         case .caffeine:
             if settings.settings.caffeinateEnabled {
                 SubtleIconButton(systemName: caffeineManager.isActive ? "cup.and.heat.waves.fill" : "cup.and.heat.waves", action: { caffeineManager.toggle() }, horizontalPadding: 6)
@@ -2165,6 +2174,14 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         (NSApp.delegate as? AppDelegate)?.makeNotchWindowFocusable()
     }
 
+    private func openAskScreen() {
+        measuredClickContentSize = .zero
+        navigationStack = [.askScreen]
+        notchState = .clickExpanded
+        (NSApp.delegate as? AppDelegate)?.makeNotchWindowFocusable()
+        Task { @MainActor in await AskScreenService.shared.captureScreen() }
+    }
+
     private func openCircleToSearch(object: String?) {
         measuredClickContentSize = .zero
         switch object {
@@ -2335,7 +2352,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         case .musicApiKeysMissing, .geminiApiKeysMissing, .musicLoginPrompt, .musicLyrics,
                 .musicPlaylistDetail, .musicArtistDetail, .musicAlbumDetail, .snapZones, .fileShelfLanding, .fileActionPreview,
                 .multiAudioDeviceAdjust, .multiAudioAppEQ, .multiAudioEQ, .dragActivated,
-                .agentS, .blipHub, .circleToSearch, .updateAvailable:
+                .agentS, .blipHub, .circleToSearch, .askScreen, .updateAvailable:
             return nil
         }
     }
@@ -2560,6 +2577,37 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 final class KeyWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+}
+
+/// SubtleIconButton's twin for asset images rather than SF Symbols — same hover feel,
+/// but keeps the artwork's own colour instead of tinting it white.
+fileprivate struct AssetIconButton: View {
+    let assetName: String
+    let action: () -> Void
+    var size: CGFloat = 15
+    var horizontalPadding: CGFloat = 8
+    var verticalPadding: CGFloat = 6
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(assetName)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: size, height: size)
+                .opacity(isHovering ? 1.0 : 0.85)
+                .padding(.horizontal, horizontalPadding)
+                .padding(.vertical, verticalPadding)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) { isHovering = hovering }
+        }
+        .scaleEffect(isHovering ? 1.1 : 1.0)
+        .animation(.spring(response: 0.4, dampingFraction: 0.6), value: isHovering)
+    }
 }
 
 fileprivate struct SubtleIconButton: View {

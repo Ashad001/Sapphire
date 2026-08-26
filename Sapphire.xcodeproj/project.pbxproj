@@ -1085,7 +1085,11 @@
 			shellPath = /bin/sh;
 			shellScript = (
 				"# Type a script or drag a script file from your workspace to insert its path.",
-				"\"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run\"",
+				"# Fork-only guard: GoogleService-Info.plist is gitignored upstream and absent here, and the",
+				"# Crashlytics run script hard-fails without it. Runs unchanged when the plist is present.",
+				"if [ -f \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GoogleService-Info.plist\" ]; then",
+				"  \"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run\"",
+				"fi",
 				"",
 			);
 		};
